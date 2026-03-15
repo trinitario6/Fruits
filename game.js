@@ -16,11 +16,11 @@ const FRUITS = [
   { emoji: '🍉', radius: 86, score: 100, name: 'Watermelon' },
 ];
 
-// Mass scales with volume (r^3) so big fruits are dramatically heavier than small ones
-// Cherry=1, Grapes=5.4, Apple=19, Peach=42, Watermelon=88
+// Mass scales with r^0.5 for a subtle size difference
+// Cherry=1, Watermelon=~2.3
 function getFruitMass(typeIndex) {
   const r = FRUITS[typeIndex].radius;
-  return (r * r * r) / (FRUITS[0].radius * FRUITS[0].radius * FRUITS[0].radius);
+  return Math.sqrt(r) / Math.sqrt(FRUITS[0].radius);
 }
 
 const GRAVITY = 0.4;
