@@ -16,6 +16,12 @@ const FRUITS = [
   { emoji: '🍉', radius: 86, score: 100, name: 'Watermelon' },
 ];
 
+// Mass scales with area (r^2) so big fruits are much heavier than small ones
+function getFruitMass(typeIndex) {
+  const r = FRUITS[typeIndex].radius;
+  return (r * r) / (FRUITS[0].radius * FRUITS[0].radius); // normalized so cherry = 1
+}
+
 const GRAVITY = 0.4;
 const FRICTION = 0.85;
 const BOUNCE = 0.25;
@@ -41,6 +47,8 @@ class Fruit {
     this.typeIndex = typeIndex;
     this.data = FRUITS[typeIndex];
     this.r = this.data.radius;
+    this.mass = getFruitMass(typeIndex);
+    this.invMass = 1 / this.mass;
     this.merging = false;
     this.id = Math.random().toString(36).slice(2);
     // Animation
@@ -135,7 +143,8 @@ class Game {
     const move = (e) => {
       e.preventDefault();
       const x = getX(e);
-      const margin = FRUITS[this.nextTypeIndex].radius + WALL_THICKNESS + 2;
+      const vr = FRUITS[this.nextTypeIndex].radius * 0.92;
+      const margin = vr + WALL_THICKNESS + 2;
       this.dropX = Math.max(margin, Math.min(this.W - margin, x));
     };
 
@@ -222,12 +231,13 @@ class Game {
       f.x += f.vx * dt;
       f.y += f.vy * dt;
 
-      // Wall collisions
-      const left = WALL_THICKNESS + f.r;
-      const right = this.W - WALL_THICKNESS - f.r;
-      const bottom = this.H - WALL_THICKNESS - f.r;
+      // Wall collisions — use the actual visual half-size so emojis stay inside
+      const vr = f.r * 0.92; // visual containment radius (slightly inside physics r)
+      const left   = WALL_THICKNESS + vr;
+      const right  = this.W - WALL_THICKNESS - vr;
+      const bottom = this.H - WALL_THICKNESS - vr;
 
-      if (f.x < left) { f.x = left; f.vx = Math.abs(f.vx) * BOUNCE; }
+      if (f.x < left)  { f.x = left;  f.vx =  Math.abs(f.vx) * BOUNCE; }
       if (f.x > right) { f.x = right; f.vx = -Math.abs(f.vx) * BOUNCE; }
       if (f.y > bottom) {
         f.y = bottom;
@@ -259,32 +269,50 @@ class Game {
             a.merging = true;
             b.merging = true;
           } else {
-            // Resolve overlap
+            // Resolve overlap — heavier fruit moves less
             if (dist < 0.001) continue;
-            const overlap = (minDist - dist) / 2;
+            const overlap = (minDist - dist);
             const nx = dx / dist;
             const ny = dy / dist;
 
-            a.x -= nx * overlap;
-            a.y -= ny * overlap;
-            b.x += nx * overlap;
-            b.y += ny * overlap;
+            const totalMass = a.mass + b.mass;
+            const shareA = b.mass / totalMass; // small fruit gets pushed more
+            const shareB = a.mass / totalMass;
 
-            // Velocity response
+            a.x -= nx * overlap * shareA;
+            a.y -= ny * overlap * shareA;
+            b.x += nx * overlap * shareB;
+            b.y += ny * overlap * shareB;
+
+            // Mass-weighted velocity impulse
             const relVx = b.vx - a.vx;
             const relVy = b.vy - a.vy;
             const dot = relVx * nx + relVy * ny;
 
             if (dot < 0) {
-              const impulse = dot * 0.4;
-              a.vx += impulse * nx;
-              a.vy += impulse * ny;
-              b.vx -= impulse * nx;
-              b.vy -= impulse * ny;
+              const restitution = 0.25;
+              const impulseMag = (-(1 + restitution) * dot) / totalMass;
+              // Small fruit gets a big kick; large fruit barely moves
+              a.vx -= impulseMag * b.mass * nx;
+              a.vy -= impulseMag * b.mass * ny;
+              b.vx += impulseMag * a.mass * nx;
+              b.vy += impulseMag * a.mass * ny;
             }
           }
         }
       }
+    }
+
+    // Hard-clamp every fruit inside walls after all collision resolution
+    for (let f of this.fruits) {
+      if (f.merging) continue;
+      const vr = f.r * 0.92;
+      const left   = WALL_THICKNESS + vr;
+      const right  = this.W - WALL_THICKNESS - vr;
+      const bottom = this.H - WALL_THICKNESS - vr;
+      if (f.x < left)  { f.x = left;   if (f.vx < 0) f.vx = 0; }
+      if (f.x > right) { f.x = right;  if (f.vx > 0) f.vx = 0; }
+      if (f.y > bottom){ f.y = bottom; if (f.vy > 0) f.vy = 0; }
     }
 
     // Process merges (in reverse to not mess up indices)
