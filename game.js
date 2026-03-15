@@ -22,11 +22,14 @@ function getFruitMass(typeIndex) {
   return (r * r * r) / (FRUITS[0].radius * FRUITS[0].radius * FRUITS[0].radius);
 }
 
-const GRAVITY = 0.4;
-const FRICTION = 0.85;
-const BOUNCE = 0.25;
+const GRAVITY = 0.5;
+const FRICTION = 0.55;       // strong floor friction — fruits stop sliding quickly
+const WALL_BOUNCE = 0.05;    // walls are nearly dead — no lateral pinball bouncing
+const FLOOR_BOUNCE = 0.04;   // floor is nearly dead — fruits thud and stay
+const AIR_DAMP = 0.97;       // per-frame velocity damping — kills lingering movement
 const WALL_THICKNESS = 8;
 const DROP_DELAY = 600; // ms between drops
+const COLLISION_ITERS = 3;   // solver iterations per frame for tighter stacking
 
 class Vec2 {
   constructor(x, y) { this.x = x; this.y = y; }
@@ -90,6 +93,7 @@ class Game {
     this.score = 0;
     this.bestScore = parseInt(localStorage.getItem('fruitMergeBest') || '0');
     this.nextTypeIndex = this.randomDropType();
+    this.queuedTypeIndex = this.randomDropType();
     this.dropX = 0;
     this.canDrop = true;
     this.lastDropTime = 0;
@@ -174,20 +178,31 @@ class Game {
 
   dropFruit() {
     if (!this.canDrop || this.gameOver) return;
+    // Drop the current fruit
     const f = new Fruit(this.dropX, FRUITS[this.nextTypeIndex].radius + WALL_THICKNESS, this.nextTypeIndex);
     f.vy = 1;
     this.fruits.push(f);
     this.canDrop = false;
 
+    // Immediately promote queued → current and show it in the preview
+    this.nextTypeIndex = this.queuedTypeIndex;
+    this.updateNextPreview();
+
     setTimeout(() => {
-      this.nextTypeIndex = this.randomDropType();
-      this.updateNextPreview();
+      // Pre-generate the next queued fruit ready for the following drop
+      this.queuedTypeIndex = this.randomDropType();
+      this.updateQueuedPreview();
       this.canDrop = true;
     }, DROP_DELAY);
   }
 
   updateNextPreview() {
     document.getElementById('next-preview').textContent = FRUITS[this.nextTypeIndex].emoji;
+  }
+
+  updateQueuedPreview() {
+    const el = document.getElementById('queued-preview');
+    if (el) el.textContent = FRUITS[this.queuedTypeIndex].emoji;
   }
 
   start() {
@@ -203,11 +218,13 @@ class Game {
     this.score = 0;
     this.unlockedFruits = new Set([0, 1]);
     this.nextTypeIndex = this.randomDropType();
+    this.queuedTypeIndex = this.randomDropType();
     this.canDrop = true;
     this.lastDropTime = 0;
     this.gameOver = false;
     this.updateUI();
     this.updateNextPreview();
+    this.updateQueuedPreview();
     this.updateEvolutionBar();
   }
 
@@ -237,20 +254,26 @@ class Game {
       const right  = this.W - WALL_THICKNESS - vr;
       const bottom = this.H - WALL_THICKNESS - vr;
 
-      if (f.x < left)  { f.x = left;  f.vx =  Math.abs(f.vx) * BOUNCE; }
-      if (f.x > right) { f.x = right; f.vx = -Math.abs(f.vx) * BOUNCE; }
+      // Per-frame air damping kills lingering velocity
+      f.vx *= AIR_DAMP;
+      f.vy *= AIR_DAMP;
+
+      if (f.x < left)  { f.x = left;  f.vx =  Math.abs(f.vx) * WALL_BOUNCE; }
+      if (f.x > right) { f.x = right; f.vx = -Math.abs(f.vx) * WALL_BOUNCE; }
       if (f.y > bottom) {
         f.y = bottom;
-        f.vy = -Math.abs(f.vy) * 0.1;
+        f.vy = -Math.abs(f.vy) * FLOOR_BOUNCE;
         f.vx *= FRICTION;
-        if (Math.abs(f.vy) < 0.5) f.vy = 0;
+        if (Math.abs(f.vy) < 0.3) f.vy = 0;
+        if (Math.abs(f.vx) < 0.1) f.vx = 0;
       }
 
       f.update(dt);
     }
 
-    // Fruit-fruit collisions & merge detection
+    // Fruit-fruit collisions & merge detection — run multiple iterations for tight stacking
     const toMerge = [];
+    for (let _iter = 0; _iter < COLLISION_ITERS; _iter++) {
     for (let i = 0; i < this.fruits.length; i++) {
       for (let j = i + 1; j < this.fruits.length; j++) {
         const a = this.fruits[i];
@@ -263,20 +286,20 @@ class Game {
         const minDist = a.r + b.r;
 
         if (dist < minDist) {
-          if (a.typeIndex === b.typeIndex && !a.merging && !b.merging) {
-            // Merge! Track by ID so stale indices can't cause disappearances
+          if (_iter === 0 && a.typeIndex === b.typeIndex && !a.merging && !b.merging) {
+            // Only detect merges on first iteration to avoid double-queuing
             toMerge.push([a.id, b.id]);
             a.merging = true;
             b.merging = true;
-          } else {
-            // Resolve overlap — heavier fruit moves less
+          } else if (!a.merging && !b.merging) {
+            // Resolve overlap for ALL non-merging pairs (including same-type)
             if (dist < 0.001) continue;
             const overlap = (minDist - dist);
             const nx = dx / dist;
             const ny = dy / dist;
 
             const totalMass = a.mass + b.mass;
-            const shareA = b.mass / totalMass; // small fruit gets pushed more
+            const shareA = b.mass / totalMass;
             const shareB = a.mass / totalMass;
 
             a.x -= nx * overlap * shareA;
@@ -290,16 +313,15 @@ class Game {
             const dot = relVx * nx + relVy * ny;
 
             if (dot < 0) {
-              const restitution = 0.25;
+              const restitution = 0.05;
               const impulseMag = (-(1 + restitution) * dot) / totalMass;
-              // Small fruit gets a big kick; large fruit barely moves
               a.vx -= impulseMag * b.mass * nx;
               a.vy -= impulseMag * b.mass * ny;
               b.vx += impulseMag * a.mass * nx;
               b.vy += impulseMag * a.mass * ny;
 
-              // Strongly suppress any upward velocity gained from collisions
-              const upwardDamp = 0.15;
+              // Moderate upward damp — still allows fruits to stack upward naturally
+              const upwardDamp = 0.45;
               if (a.vy < 0) a.vy *= upwardDamp;
               if (b.vy < 0) b.vy *= upwardDamp;
             }
@@ -307,6 +329,7 @@ class Game {
         }
       }
     }
+    } // end COLLISION_ITERS
 
     // Hard-clamp every fruit inside walls after all collision resolution
     for (let f of this.fruits) {
@@ -379,17 +402,16 @@ class Game {
       return p.life > 0;
     });
 
-    // Game over check - any fruit above the danger line
+    // Game over check — fruit touching or above danger line
     const dangerY = FRUITS[0].radius * 2 + WALL_THICKNESS + 10;
-    if (!this.gameOver && this.fruits.some(f => !f.justMerged && f.y - f.r < dangerY && f.vy < 0.5 && f.scale >= 1)) {
-      // Give a grace period
+    if (!this.gameOver && this.fruits.some(f => !f.justMerged && f.y - f.r <= dangerY && f.scale >= 1)) {
       if (!this._overTimer) {
         this._overTimer = setTimeout(() => {
-          if (this.fruits.some(f => f.y - f.r < dangerY && f.vy < 0.5)) {
+          if (this.fruits.some(f => f.y - f.r <= dangerY && f.scale >= 1)) {
             this.triggerGameOver();
           }
           this._overTimer = null;
-        }, 1500);
+        }, 800);
       }
     } else {
       if (this._overTimer) {
