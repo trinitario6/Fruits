@@ -17,15 +17,24 @@
     :root {
       --bg: #0d0820;
       --panel: #1a1035;
-      --wall: #2a1f55;
       --accent: #ff6b9d;
       --accent2: #ffd93d;
       --accent3: #6bcb77;
       --text: #f0e6ff;
-      --shadow: rgba(255,107,157,0.3);
+      /* Safe-area padding for iPhone notch / home indicator */
+      --sat: env(safe-area-inset-top, 0px);
+      --sab: env(safe-area-inset-bottom, 0px);
+      --sal: env(safe-area-inset-left, 0px);
+      --sar: env(safe-area-inset-right, 0px);
     }
 
     * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+    }
 
     body {
       background: var(--bg);
@@ -34,9 +43,14 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      min-height: 100dvh;
-      overflow: hidden;
+      /* Use 100svh (small viewport height) so iOS toolbar doesn't cause overflow */
+      height: 100svh;
       position: relative;
+    }
+
+    /* Fallback for browsers without svh support */
+    @supports not (height: 100svh) {
+      body { height: 100vh; }
     }
 
     body::before {
@@ -54,26 +68,34 @@
       position: relative;
       z-index: 1;
       width: 100%;
-      max-width: 420px;
+      max-width: 480px;
       display: flex;
       flex-direction: column;
       align-items: center;
-      padding: 8px 12px 4px;
-      height: 100dvh;
+      /* Respect safe areas on all sides */
+      padding:
+        calc(6px + var(--sat))
+        calc(10px + var(--sar))
+        calc(4px + var(--sab))
+        calc(10px + var(--sal));
+      height: 100%;
+      /* Prevent any child from blowing out the container */
+      min-height: 0;
     }
 
-    /* Header */
+    /* ── Header ── */
     header {
       width: 100%;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      margin-bottom: 6px;
+      margin-bottom: 4px;
+      flex-shrink: 0;
     }
 
     h1 {
       font-family: 'Fredoka One', sans-serif;
-      font-size: 1.7rem;
+      font-size: clamp(1.1rem, 5vw, 1.7rem);
       background: linear-gradient(135deg, #ff6b9d, #ffd93d, #6bcb77);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
@@ -87,57 +109,61 @@
       align-items: center;
       background: var(--panel);
       border: 1px solid rgba(255,255,255,0.1);
-      border-radius: 12px;
-      padding: 4px 14px;
+      border-radius: 10px;
+      padding: 3px 10px;
     }
-    .score-label { font-size: 0.6rem; opacity: 0.6; text-transform: uppercase; letter-spacing: 1px; }
-    .score-value { font-family: 'Fredoka One', sans-serif; font-size: 1.3rem; color: var(--accent2); }
+    .score-label {
+      font-size: clamp(0.5rem, 1.8vw, 0.62rem);
+      opacity: 0.6;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    .score-value {
+      font-family: 'Fredoka One', sans-serif;
+      font-size: clamp(0.95rem, 3.5vw, 1.3rem);
+      color: var(--accent2);
+    }
 
-    /* Next fruit preview */
+    /* ── Next fruit row ── */
     .next-row {
       width: 100%;
       display: flex;
       align-items: center;
-      gap: 10px;
-      margin-bottom: 6px;
+      gap: 8px;
+      margin-bottom: 4px;
+      flex-shrink: 0;
     }
-    .next-label { font-size: 0.65rem; opacity: 0.5; text-transform: uppercase; letter-spacing: 1px; }
+    .next-label {
+      font-size: clamp(0.55rem, 1.8vw, 0.65rem);
+      opacity: 0.5;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
     #next-preview {
-      width: 36px;
-      height: 36px;
+      width: clamp(28px, 8vw, 36px);
+      height: clamp(28px, 8vw, 36px);
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 1.6rem;
+      font-size: clamp(1.2rem, 4.5vw, 1.6rem);
       filter: drop-shadow(0 0 8px rgba(255,255,255,0.3));
     }
 
-    /* Drop line indicator */
-    #drop-line {
-      position: absolute;
-      top: 0;
-      width: 2px;
-      background: rgba(255,255,255,0.3);
-      border-radius: 1px;
-      pointer-events: none;
-      transition: left 0.05s;
-      display: none;
-    }
-
-    /* Game canvas wrapper */
+    /* ── Game canvas wrapper — takes all remaining vertical space ── */
     #canvas-wrap {
       position: relative;
       width: 100%;
-      flex: 1;
+      flex: 1 1 0;       /* grow but also shrink */
+      min-height: 0;     /* critical: lets flex child shrink below content height */
       display: flex;
-      align-items: flex-start;
+      align-items: stretch;
     }
 
     #gameCanvas {
       display: block;
       width: 100%;
       height: 100%;
-      border-radius: 18px;
+      border-radius: 14px;
       border: 2px solid rgba(255,255,255,0.08);
       background: var(--panel);
       box-shadow: 0 0 40px rgba(108,60,200,0.3), inset 0 0 60px rgba(0,0,0,0.3);
@@ -145,46 +171,60 @@
       touch-action: none;
     }
 
-    /* Evolution bar */
+    /* ── Evolution bar — scrollable on tiny screens, wraps on normal ones ── */
     #evo-bar {
       width: 100%;
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 3px;
-      margin-top: 6px;
-      padding: 6px 10px;
+      flex-wrap: nowrap;
+      gap: 1px;
+      margin-top: 4px;
+      padding: 5px 8px;
       background: var(--panel);
-      border-radius: 12px;
+      border-radius: 10px;
       border: 1px solid rgba(255,255,255,0.06);
+      flex-shrink: 0;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
     }
+    #evo-bar::-webkit-scrollbar { display: none; }
+
     .evo-fruit {
-      font-size: 1.1rem;
+      /* Scale emoji to fit — minimum 0.7rem on very small screens */
+      font-size: clamp(0.7rem, 2.8vw, 1.05rem);
       opacity: 0.4;
       transition: all 0.3s;
       filter: grayscale(0.8);
+      flex-shrink: 0;
     }
-    .evo-arrow { font-size: 0.55rem; opacity: 0.25; }
+    .evo-arrow {
+      font-size: clamp(0.4rem, 1.2vw, 0.55rem);
+      opacity: 0.25;
+      flex-shrink: 0;
+    }
     .evo-fruit.unlocked { opacity: 1; filter: none; }
 
-    /* Overlay screens */
+    /* ── Overlays ── */
     .overlay {
       position: fixed;
       inset: 0;
-      background: rgba(13,8,32,0.9);
+      background: rgba(13,8,32,0.92);
       backdrop-filter: blur(8px);
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
       z-index: 100;
-      gap: 18px;
+      gap: 16px;
+      padding: 20px;
     }
     .overlay.hidden { display: none; }
 
     .overlay h2 {
       font-family: 'Fredoka One', sans-serif;
-      font-size: 2.5rem;
+      font-size: clamp(1.8rem, 8vw, 2.5rem);
       background: linear-gradient(135deg, #ff6b9d, #ffd93d);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
@@ -192,19 +232,19 @@
     }
 
     .overlay-score {
-      font-size: 1.2rem;
+      font-size: clamp(1rem, 3.5vw, 1.2rem);
       opacity: 0.8;
     }
     .overlay-score span {
       font-family: 'Fredoka One', sans-serif;
       color: var(--accent2);
-      font-size: 2rem;
+      font-size: clamp(1.4rem, 5vw, 2rem);
     }
 
     .btn {
       font-family: 'Fredoka One', sans-serif;
-      font-size: 1.2rem;
-      padding: 14px 40px;
+      font-size: clamp(1rem, 3.5vw, 1.2rem);
+      padding: 12px 36px;
       border-radius: 50px;
       border: none;
       cursor: pointer;
@@ -227,7 +267,7 @@
       letter-spacing: 2px;
     }
 
-    /* Toast for merges */
+    /* ── Toast ── */
     #toast {
       position: fixed;
       top: 60px;
@@ -236,24 +276,27 @@
       background: linear-gradient(135deg, #ff6b9d, #ffd93d);
       color: #0d0820;
       font-family: 'Fredoka One', sans-serif;
-      font-size: 1.1rem;
-      padding: 8px 20px;
+      font-size: clamp(0.85rem, 3vw, 1.1rem);
+      padding: 7px 18px;
       border-radius: 50px;
       opacity: 0;
       pointer-events: none;
       transition: all 0.3s;
       z-index: 200;
       white-space: nowrap;
+      max-width: 90vw;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
     #toast.show {
       opacity: 1;
       transform: translateX(-50%) translateY(0);
     }
 
-    /* PWA install banner */
+    /* ── PWA install banner ── */
     #install-banner {
       position: fixed;
-      bottom: 12px;
+      bottom: calc(12px + var(--sab));
       left: 50%;
       transform: translateX(-50%);
       background: var(--panel);
@@ -266,7 +309,7 @@
       z-index: 300;
       font-size: 0.8rem;
       box-shadow: 0 8px 32px rgba(0,0,0,0.5);
-      max-width: 340px;
+      max-width: min(340px, 90vw);
     }
     #install-banner.hidden { display: none; }
     #install-banner button {

@@ -131,9 +131,10 @@ class Game {
   setupCanvas() {
     const wrap = document.getElementById('canvas-wrap');
     const resize = () => {
-      const rect = wrap.getBoundingClientRect();
-      const w = rect.width;
-      const h = rect.height;
+      // Use the wrapper's actual rendered size, not window dimensions
+      const w = wrap.clientWidth;
+      const h = wrap.clientHeight;
+      if (w < 10 || h < 10) return; // guard against zero-size during init
       this.canvas.width = w;
       this.canvas.height = h;
       this.W = w;
@@ -141,7 +142,12 @@ class Game {
       this.dropX = w / 2;
     };
     resize();
-    window.addEventListener('resize', () => { resize(); });
+    // ResizeObserver fires on any layout change — orientation, keyboard, toolbar
+    const ro = new ResizeObserver(() => resize());
+    ro.observe(wrap);
+    // Belt-and-suspenders for older browsers
+    window.addEventListener('resize', resize);
+    window.addEventListener('orientationchange', () => setTimeout(resize, 200));
   }
 
   bindEvents() {

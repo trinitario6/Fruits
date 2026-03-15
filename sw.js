@@ -1,66 +1,77 @@
-const CACHE_NAME = 'fruit-merge-v1';
-const ASSETS = [
+// Bump this version string whenever you push an update.
+// The browser detects the change, installs the new SW in the background,
+// and activates it the next time the user opens the app — no reinstall needed.
+const VERSION = 'fruit-merge-v6';
+
+const PRECACHE = [
   './',
   './index.html',
   './game.js',
   './manifest.json',
   './icons/icon-192.png',
   './icons/icon-512.png',
-  'https://fonts.googleapis.com/css2?family=Fredoka+One&family=Nunito:wght@400;600;800&display=swap',
+  './icons/icon-192-maskable.png',
+  './icons/icon-512-maskable.png',
 ];
 
+// ── Install: cache all core assets ──────────────────────────────────────────
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return Promise.allSettled(
-        ASSETS.map(url => cache.add(url).catch(err => console.warn('Cache miss:', url)))
-      );
-    })
+    caches.open(VERSION).then((cache) =>
+      Promise.allSettled(PRECACHE.map(url => cache.add(url)))
+    )
   );
   self.skipWaiting();
 });
 
+// ── Activate: delete every old cache version ────────────────────────────────
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
-      Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))
-    )
+      Promise.all(keys.filter(k => k !== VERSION).map(k => caches.delete(k)))
+    ).then(() => self.clients.claim())
   );
-  self.clients.claim();
 });
 
+// ── Fetch strategy ───────────────────────────────────────────────────────────
 self.addEventListener('fetch', (event) => {
-  // Cache-first for game assets, network-first for fonts
-  const url = new URL(event.request.url);
+  const { request } = event;
+  const url = new URL(request.url);
 
   if (url.hostname === 'fonts.googleapis.com' || url.hostname === 'fonts.gstatic.com') {
-    event.respondWith(
-      caches.open(CACHE_NAME).then(cache =>
-        fetch(event.request)
-          .then(response => {
-            cache.put(event.request, response.clone());
-            return response;
-          })
-          .catch(() => caches.match(event.request))
-      )
-    );
+    event.respondWith(networkFirstThenCache(request));
     return;
   }
 
-  event.respondWith(
-    caches.match(event.request).then(cached => {
-      if (cached) return cached;
-      return fetch(event.request).then(response => {
-        if (response && response.status === 200 && response.type === 'basic') {
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then(c => c.put(event.request, clone));
-        }
-        return response;
-      }).catch(() => {
-        if (event.request.destination === 'document') {
-          return caches.match('./index.html');
-        }
-      });
-    })
-  );
+  if (request.destination === 'document' || url.pathname.endsWith('.html') || url.pathname === '/') {
+    event.respondWith(networkFirstThenCache(request));
+    return;
+  }
+
+  event.respondWith(staleWhileRevalidate(request));
 });
+
+async function networkFirstThenCache(request) {
+  const cache = await caches.open(VERSION);
+  try {
+    const response = await fetch(request);
+    if (response && response.status === 200) {
+      cache.put(request, response.clone());
+    }
+    return response;
+  } catch {
+    return cache.match(request);
+  }
+}
+
+async function staleWhileRevalidate(request) {
+  const cache = await caches.open(VERSION);
+  const cached = await cache.match(request);
+  const fetchPromise = fetch(request).then((response) => {
+    if (response && response.status === 200 && response.type !== 'opaque') {
+      cache.put(request, response.clone());
+    }
+    return response;
+  }).catch(() => null);
+  return cached || fetchPromise;
+}
