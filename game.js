@@ -16,11 +16,10 @@ const FRUITS = [
   { emoji: '🍉', radius: 86, score: 100, name: 'Watermelon' },
 ];
 
-// Mass scales with r^0.5 for a subtle size difference
-// Cherry=1, Watermelon=~2.3
+// Mass scales with volume (r^3) — cherry=1, watermelon=~88
 function getFruitMass(typeIndex) {
   const r = FRUITS[typeIndex].radius;
-  return Math.sqrt(r) / Math.sqrt(FRUITS[0].radius);
+  return (r * r * r) / (FRUITS[0].radius * FRUITS[0].radius * FRUITS[0].radius);
 }
 
 const GRAVITY = 0.4;
@@ -242,7 +241,7 @@ class Game {
       if (f.x > right) { f.x = right; f.vx = -Math.abs(f.vx) * BOUNCE; }
       if (f.y > bottom) {
         f.y = bottom;
-        f.vy = -Math.abs(f.vy) * BOUNCE;
+        f.vy = -Math.abs(f.vy) * 0.1;
         f.vx *= FRICTION;
         if (Math.abs(f.vy) < 0.5) f.vy = 0;
       }
@@ -265,8 +264,8 @@ class Game {
 
         if (dist < minDist) {
           if (a.typeIndex === b.typeIndex && !a.merging && !b.merging) {
-            // Merge!
-            toMerge.push([i, j]);
+            // Merge! Track by ID so stale indices can't cause disappearances
+            toMerge.push([a.id, b.id]);
             a.merging = true;
             b.merging = true;
           } else {
@@ -298,6 +297,11 @@ class Game {
               a.vy -= impulseMag * b.mass * ny;
               b.vx += impulseMag * a.mass * nx;
               b.vy += impulseMag * a.mass * ny;
+
+              // Strongly suppress any upward velocity gained from collisions
+              const upwardDamp = 0.15;
+              if (a.vy < 0) a.vy *= upwardDamp;
+              if (b.vy < 0) b.vy *= upwardDamp;
             }
           }
         }
@@ -316,27 +320,29 @@ class Game {
       if (f.y > bottom){ f.y = bottom; if (f.vy > 0) f.vy = 0; }
     }
 
-    // Process merges (in reverse to not mess up indices)
+    // Process merges — look up by ID so array mutations don't cause stale index bugs
     const processedPairs = new Set();
-    for (let [i, j] of toMerge) {
-      const key = `${Math.min(i,j)}-${Math.max(i,j)}`;
+    for (let [idA, idB] of toMerge) {
+      const key = [idA, idB].sort().join('-');
       if (processedPairs.has(key)) continue;
       processedPairs.add(key);
 
-      const a = this.fruits[i];
-      const b = this.fruits[j];
+      const a = this.fruits.find(f => f.id === idA);
+      const b = this.fruits.find(f => f.id === idB);
+
+      // Safety check — both must still exist and still be flagged for merging
+      if (!a || !b || !a.merging || !b.merging) continue;
+
       const newType = a.typeIndex + 1;
+      const mx = (a.x + b.x) / 2;
+      const my = (a.y + b.y) / 2;
+
+      this.spawnParticles(mx, my, FRUITS[a.typeIndex].emoji);
 
       if (newType < FRUITS.length) {
-        const mx = (a.x + b.x) / 2;
-        const my = (a.y + b.y) / 2;
-
-        // Spawn particles
-        this.spawnParticles(mx, my, FRUITS[a.typeIndex].emoji);
-
-        // Create merged fruit
+        // Normal merge — create the next fruit
         const merged = new Fruit(mx, my, newType);
-        merged.vy = -2;
+        merged.vy = -0.5;
         merged.vx = (a.vx + b.vx) * 0.3;
         merged.mergeFlash = 1;
         merged.justMerged = true;
@@ -348,10 +354,15 @@ class Game {
         const points = FRUITS[newType].score;
         this.addScore(points);
         this.showToast(`${FRUITS[newType].emoji} ${FRUITS[newType].name}! +${points}`);
-
-        if (newType === FRUITS.length - 1) {
-          this.showToast('🍉 WATERMELON! Amazing!');
-        }
+      } else {
+        // Max fruit (watermelon) merging — award bonus points but don't delete them,
+        // just un-flag them so they stay in play
+        a.merging = false;
+        b.merging = false;
+        a.mergeFlash = 1;
+        b.mergeFlash = 1;
+        this.addScore(FRUITS[a.typeIndex].score * 2);
+        this.showToast('🍉🍉 Double Watermelon! Bonus!');
       }
     }
 
