@@ -14,8 +14,10 @@ const FRUITS = [
   { emoji: '🍍', radius: 68, score: 45,  name: 'Pineapple' },
   { emoji: '🥭', radius: 76, score: 55,  name: 'Mango' },
   { emoji: '🍉', radius: 86, score: 100, name: 'Watermelon' },
+  { emoji: '🍈', radius: 98, score: 500, name: 'Jackfruit' },
 ];
 
+const WIN_SCORE = 100000;
 // Mass scales with volume (r^3) — cherry=1, watermelon=~88
 function getFruitMass(typeIndex) {
   const r = FRUITS[typeIndex].radius;
@@ -116,6 +118,11 @@ class Game {
     });
     document.getElementById('restart-btn').addEventListener('click', () => {
       document.getElementById('gameover-screen').classList.add('hidden');
+      this.reset();
+      this.start();
+    });
+    document.getElementById('win-restart-btn').addEventListener('click', () => {
+      document.getElementById('win-screen').classList.add('hidden');
       this.reset();
       this.start();
     });
@@ -376,16 +383,22 @@ class Game {
 
         const points = FRUITS[newType].score;
         this.addScore(points);
-        this.showToast(`${FRUITS[newType].emoji} ${FRUITS[newType].name}! +${points}`);
+
+        if (newType === FRUITS.length - 1) {
+          this.showToast('🍈 JACKFRUIT! Legendary! +500');
+        } else if (newType === FRUITS.length - 2) {
+          this.showToast('🍉 WATERMELON! Amazing! +100');
+        } else {
+          this.showToast(`${FRUITS[newType].emoji} ${FRUITS[newType].name}! +${points}`);
+        }
       } else {
-        // Max fruit (watermelon) merging — award bonus points but don't delete them,
-        // just un-flag them so they stay in play
+        // Two jackfruits — just un-flag and give bonus, they stay in play
         a.merging = false;
         b.merging = false;
         a.mergeFlash = 1;
         b.mergeFlash = 1;
-        this.addScore(FRUITS[a.typeIndex].score * 2);
-        this.showToast('🍉🍉 Double Watermelon! Bonus!');
+        this.addScore(1000);
+        this.showToast('🍈🍈 Double Jackfruit! +1000 BONUS!');
       }
     }
 
@@ -554,7 +567,7 @@ class Game {
     const colors = [
       '#ff4444', '#ff6b9d', '#9b59b6', '#ff8c00',
       '#e74c3c', '#a8d8a8', '#ffb347', '#f4d03f',
-      '#f39c12', '#e67e22', '#2ecc71'
+      '#f39c12', '#e67e22', '#2ecc71', '#c8a84b'
     ];
     return colors[idx] || '#ffffff';
   }
@@ -567,6 +580,9 @@ class Game {
       document.getElementById('best-display').textContent = this.bestScore;
     }
     this.updateUI();
+    if (!this.gameOver && this.score >= WIN_SCORE) {
+      this.triggerWin();
+    }
   }
 
   updateUI() {
@@ -591,6 +607,13 @@ class Game {
     toast.classList.add('show');
     clearTimeout(this._toastTimer);
     this._toastTimer = setTimeout(() => toast.classList.remove('show'), 1800);
+  }
+
+  triggerWin() {
+    this.gameOver = true;
+    if (this._overTimer) { clearTimeout(this._overTimer); this._overTimer = null; }
+    document.getElementById('win-score').textContent = this.score.toLocaleString();
+    document.getElementById('win-screen').classList.remove('hidden');
   }
 
   triggerGameOver() {

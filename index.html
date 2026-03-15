@@ -338,6 +338,8 @@
     <span class="evo-fruit" id="evo-9">🥭</span>
     <span class="evo-arrow">▶</span>
     <span class="evo-fruit" id="evo-10">🍉</span>
+    <span class="evo-arrow">▶</span>
+    <span class="evo-fruit" id="evo-11">🍈</span>
   </div>
 </div>
 
@@ -349,6 +351,14 @@
     Drop fruits to merge matching ones into bigger fruits.<br>Reach the 🍉 watermelon!
   </p>
   <button class="btn btn-primary" id="start-btn">Play Now</button>
+</div>
+
+<div class="overlay hidden" id="win-screen">
+  <div style="font-size:3.5rem">🍈🏆</div>
+  <h2 style="background: linear-gradient(135deg,#ffd93d,#6bcb77);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">YOU WIN!</h2>
+  <div class="overlay-score">Score: <span id="win-score">0</span></div>
+  <p style="opacity:0.6;text-align:center;max-width:280px;font-size:0.9rem">You reached 100,000 points and grew the legendary Jackfruit! 🍈</p>
+  <button class="btn btn-primary" id="win-restart-btn">Play Again</button>
 </div>
 
 <div class="overlay hidden" id="gameover-screen">
